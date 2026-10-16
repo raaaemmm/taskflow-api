@@ -16,8 +16,7 @@ DROGON_TEST(QueryDefaults) {
 }
 
 DROGON_TEST(QueryFilters) {
-    Params p{{"status", "todo,done,todo"}, {"priority_min", "2"}, {"tags", "Work,home"},
-             {"sort", "-priority,due_date"}, {"q", "milk"}, {"overdue", "true"}};
+    Params p{{"status", "todo,done,todo"}, {"priority_min", "2"}, {"tags", "Work,home"}, {"sort", "-priority,due_date"}, {"q", "milk"}, {"overdue", "true"}};
     auto q = validation::parseTodoQuery(p);
     CHECK(q.filter.statuses.size() == 2);
     CHECK(*q.filter.priorityMin == 2);
