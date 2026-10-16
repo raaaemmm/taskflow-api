@@ -1,0 +1,11 @@
+{
+  "app": {
+    "number_of_threads": 4,
+    "log": {
+      "log_level": "INFO"
+    },
+    "client_max_body_size": "256K",
+    "idle_connection_timeout": 60,
+    "use_gzip": true
+  }
+}

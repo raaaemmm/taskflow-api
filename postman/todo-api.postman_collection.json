@@ -1,0 +1,3575 @@
+{
+  "info": {
+    "_postman_id": "df3af501-1ac0-4704-9acc-06539212719d",
+    "name": "Todo API (C++ / Drogon)",
+    "description": "End-to-end test suite for the Todo API.\n\n**Setup**\n1. Import this collection and `todo-api.local.postman_environment.json`.\n2. Select the **Todo API - Local** environment (top-right).\n3. Start the API: `docker compose up` (default http://localhost:8080).\n4. Open the collection > **Run** and run it top to bottom (folders 00-07 depend on each other).\n\nEvery run registers a brand-new user, so it can be repeated. Tokens and ids are stored in the environment automatically.\n\n**Rate limits:** auth endpoints allow 10 requests/minute/IP; one run uses 9. If you re-run within a minute you will get 429s - wait 60 s, or raise `AUTH_RATE_LIMIT_PER_MIN` in docker-compose.yml.\n\nHealth endpoints live at `/health` and `/ready`; everything else is under `/api/v1`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Response time < 2000 ms', () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+          "pm.test('Security headers present', () => {",
+          "    pm.expect(pm.response.headers.get('X-Content-Type-Options')).to.eql('nosniff');",
+          "    pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store');",
+          "});",
+          "if (pm.response.code !== 204) {",
+          "    pm.test('Content-Type is JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json'));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "00 Health",
+      "item": [
+        {
+          "name": "Liveness  GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Liveness probe. Always 200 while the process is up. Note: health routes are NOT under /api/v1.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is \"ok\"', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness  GET /ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            },
+            "description": "Readiness probe. 200 only when the database is reachable.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is \"ready\"', () => pm.expect(pm.response.json().status).to.eql('ready'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown route",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "/does-not-exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "does-not-exist"
+              ]
+            },
+            "description": "Any unknown route returns the standard JSON error envelope.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"not_found\"', () => pm.expect(err.code).to.eql('not_found'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 Auth",
+      "item": [
+        {
+          "name": "Register (new unique user)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Creates a user. A fresh e-mail is generated on every run (user_<timestamp>@example.com) so the collection can be re-run. Password must be at least 10 characters. Saves access_token, refresh_token and user_id to the environment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('email', 'user_' + Date.now() + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('returns the new user', () => {",
+                  "    pm.expect(d.user.email).to.eql(pm.environment.get('email'));",
+                  "    pm.expect(d.user.id).to.be.a('number');",
+                  "});",
+                  "pm.test('returns a bearer token pair', () => {",
+                  "    pm.expect(d.tokens.token_type).to.eql('Bearer');",
+                  "    pm.expect(d.tokens.expires_in).to.be.a('number').and.above(0);",
+                  "    pm.expect(d.tokens.access_token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(d.tokens.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('password is never returned', () => pm.expect(pm.response.text()).to.not.include('password'));",
+                  "pm.environment.set('access_token', d.tokens.access_token);",
+                  "pm.environment.set('refresh_token', d.tokens.refresh_token);",
+                  "pm.environment.set('user_id', d.user.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register - duplicate e-mail",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"conflict\"', () => pm.expect(err.code).to.eql('conflict'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register - invalid input",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Bad e-mail AND a too-short password: both problems are reported in error.details.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"short\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"email\"', () => pm.expect(err.details).to.have.property('email'));",
+                  "pm.test('details has \"password\"', () => pm.expect(err.details).to.have.property('password'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Returns a fresh token pair. Saves tokens to the environment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('returns user and tokens', () => {",
+                  "    pm.expect(d.user.email).to.eql(pm.environment.get('email'));",
+                  "    pm.expect(d.tokens.access_token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(d.tokens.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.environment.set('access_token', d.tokens.access_token);",
+                  "pm.environment.set('refresh_token', d.tokens.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - wrong password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"this-is-wrong-123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"unauthorized\"', () => pm.expect(err.code).to.eql('unauthorized'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Current user  GET /auth/me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Requires Authorization: Bearer <access_token> (set automatically from the environment)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const u = pm.response.json().data;",
+                  "pm.test('returns the logged-in user', () => {",
+                  "    pm.expect(u.email).to.eql(pm.environment.get('email'));",
+                  "    pm.expect(u.id).to.eql(pm.environment.get('user_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Auth endpoints share a stricter rate limit (10 requests / minute / IP by default). One full run of this collection uses 9 of them."
+    },
+    {
+      "name": "02 Security",
+      "item": [
+        {
+          "name": "List todos - no token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"unauthorized\"', () => pm.expect(err.code).to.eql('unauthorized'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "",
+                  "pm.test('WWW-Authenticate: Bearer header', () => pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List todos - malformed token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer not.a.real-token"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"unauthorized\"', () => pm.expect(err.code).to.eql('unauthorized'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List todos - wrong auth scheme",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Basic dXNlcjpwYXNz"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"unauthorized\"', () => pm.expect(err.code).to.eql('unauthorized'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create todo - no token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Should not be created\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"unauthorized\"', () => pm.expect(err.code).to.eql('unauthorized'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "The JWT filter must protect every /todos and /stats route."
+    },
+    {
+      "name": "03 Todos - Create",
+      "item": [
+        {
+          "name": "Create todo A  (todo, p3, overdue)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Buy milk\",\n  \"description\": \"2 litres\",\n  \"status\": \"todo\",\n  \"priority\": 3,\n  \"due_date\": \"2020-01-01T00:00:00Z\",\n  \"tags\": [\n    \"home\",\n    \"shopping\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('todo has all fields', () => {",
+                  "    ['id','title','description','status','priority','due_date','tags','created_at','updated_at','completed_at']",
+                  "        .forEach(k => pm.expect(t).to.have.property(k));",
+                  "});",
+                  "",
+                  "pm.test('values are stored as sent', () => {",
+                  "    pm.expect(t.title).to.eql('Buy milk');",
+                  "    pm.expect(t.description).to.eql('2 litres');",
+                  "    pm.expect(t.status).to.eql('todo');",
+                  "    pm.expect(t.priority).to.eql(3);",
+                  "    pm.expect(t.tags).to.eql(['home', 'shopping']);",
+                  "    pm.expect(t.due_date).to.eql('2020-01-01T00:00:00.000Z');",
+                  "    pm.expect(t.completed_at).to.eql(null);",
+                  "});",
+                  "",
+                  "pm.environment.set('todo_a_id', t.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create todo B  (in_progress, p4, future)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Write report\",\n  \"description\": \"Quarterly numbers\",\n  \"status\": \"in_progress\",\n  \"priority\": 4,\n  \"due_date\": \"2099-01-01T00:00:00Z\",\n  \"tags\": [\n    \"work\",\n    \"urgent\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('todo has all fields', () => {",
+                  "    ['id','title','description','status','priority','due_date','tags','created_at','updated_at','completed_at']",
+                  "        .forEach(k => pm.expect(t).to.have.property(k));",
+                  "});",
+                  "pm.test('status is in_progress', () => pm.expect(t.status).to.eql('in_progress'));",
+                  "",
+                  "pm.environment.set('todo_b_id', t.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create todo C  (done, p1, no due date)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Call mom\",\n  \"status\": \"done\",\n  \"priority\": 1,\n  \"tags\": [\n    \"home\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('todo has all fields', () => {",
+                  "    ['id','title','description','status','priority','due_date','tags','created_at','updated_at','completed_at']",
+                  "        .forEach(k => pm.expect(t).to.have.property(k));",
+                  "});",
+                  "",
+                  "pm.test('created as done: completed_at is set, due_date null', () => {",
+                  "    pm.expect(t.status).to.eql('done');",
+                  "    pm.expect(t.completed_at).to.be.a('string');",
+                  "    pm.expect(t.due_date).to.eql(null);",
+                  "});",
+                  "",
+                  "pm.environment.set('todo_c_id', t.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - empty title",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"title\"', () => pm.expect(err.details).to.have.property('title'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - title too long (201 chars)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{long_title}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('long_title', 'x'.repeat(201));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"title\"', () => pm.expect(err.details).to.have.property('title'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - invalid status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\",\n  \"status\": \"finished\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"status\"', () => pm.expect(err.details).to.have.property('status'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - priority out of range (5)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\",\n  \"priority\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"priority\"', () => pm.expect(err.details).to.have.property('priority'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - invalid tag characters",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\",\n  \"tags\": [\n    \"Bad Tag!\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"tags\"', () => pm.expect(err.details).to.have.property('tags'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - too many tags (11)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\",\n  \"tags\": [\n    \"t0\",\n    \"t1\",\n    \"t2\",\n    \"t3\",\n    \"t4\",\n    \"t5\",\n    \"t6\",\n    \"t7\",\n    \"t8\",\n    \"t9\",\n    \"t10\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"tags\"', () => pm.expect(err.details).to.have.property('tags'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - due_date without timezone",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\",\n  \"due_date\": \"2026-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"due_date\"', () => pm.expect(err.details).to.have.property('due_date'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - body is not a JSON object",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "[\"not\", \"an\", \"object\"]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"bad_request\"', () => pm.expect(err.code).to.eql('bad_request'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Creates three seed todos (A, B, C) used by the list/filter tests, plus validation failures. Field rules: title 1-200 chars; status todo|in_progress|done; priority 1-4; tags max 10, [a-z0-9_-]; due_date ISO-8601 WITH timezone."
+    },
+    {
+      "name": "04 Todos - Read & List",
+      "item": [
+        {
+          "name": "Get todo by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_a_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_a_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('todo has all fields', () => {",
+                  "    ['id','title','description','status','priority','due_date','tags','created_at','updated_at','completed_at']",
+                  "        .forEach(k => pm.expect(t).to.have.property(k));",
+                  "});",
+                  "",
+                  "pm.test('is todo A', () => {",
+                  "    pm.expect(t.id).to.eql(pm.environment.get('todo_a_id'));",
+                  "    pm.expect(t.title).to.eql('Buy milk');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get todo - not found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"not_found\"', () => pm.expect(err.code).to.eql('not_found'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get todo - invalid id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "abc"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"bad_request\"', () => pm.expect(err.code).to.eql('bad_request'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List - default (offset pagination)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "description": "Default sort is -created_at, so the newest todo (C) comes first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 3 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(3);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\", \"Call mom\", \"Write report\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\", \"Call mom\", \"Write report\"]);",
+                  "});",
+                  "",
+                  "pm.test('first item is \"Call mom\"', () => pm.expect(body.data[0].title).to.eql('Call mom'));",
+                  "",
+                  "const meta = pm.response.json().meta.pagination;",
+                  "pm.test('pagination meta is correct', () => {",
+                  "",
+                  "    pm.expect(meta.mode).to.eql('offset');",
+                  "    pm.expect(meta.page).to.eql(1);",
+                  "    pm.expect(meta.page_size).to.eql(20);",
+                  "    pm.expect(meta.total).to.eql(3);",
+                  "    pm.expect(meta.total_pages).to.eql(1);",
+                  "    pm.expect(meta.has_next).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List - page 1 of 2 (page_size=2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?page=1&page_size=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 2 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(2);",
+                  "});",
+                  "",
+                  "const meta = pm.response.json().meta.pagination;",
+                  "pm.test('pagination meta is correct', () => {",
+                  "",
+                  "    pm.expect(meta.total).to.eql(3);",
+                  "    pm.expect(meta.total_pages).to.eql(2);",
+                  "    pm.expect(meta.has_next).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List - page 2 of 2 (page_size=2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?page=2&page_size=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "2"
+                },
+                {
+                  "key": "page_size",
+                  "value": "2"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "const meta = pm.response.json().meta.pagination;",
+                  "pm.test('pagination meta is correct', () => {",
+                  "",
+                  "    pm.expect(meta.page).to.eql(2);",
+                  "    pm.expect(meta.has_next).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - status=todo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?status=todo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "todo"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - status=todo,in_progress (any-of)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?status=todo,in_progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "todo,in_progress"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 2 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(2);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\", \"Write report\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\", \"Write report\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - priority_min=3",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?priority_min=3",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "priority_min",
+                  "value": "3"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 2 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(2);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\", \"Write report\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\", \"Write report\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - priority_max=1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?priority_max=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "priority_max",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Call mom\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Call mom\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - priority 2..3",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?priority_min=2&priority_max=3",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "priority_min",
+                  "value": "2"
+                },
+                {
+                  "key": "priority_max",
+                  "value": "3"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search - q=milk (case-insensitive)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?q=MILK",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "MILK"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search - q matches description",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?q=quarterly",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "quarterly"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Write report\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Write report\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - tags=home",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?tags=home",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "tags",
+                  "value": "home"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 2 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(2);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\", \"Call mom\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\", \"Call mom\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - tags=home,shopping (must have ALL)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?tags=home,shopping",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "tags",
+                  "value": "home,shopping"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - due_before=2021-01-01",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?due_before=2021-01-01T00:00:00Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "due_before",
+                  "value": "2021-01-01T00:00:00Z"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - due_after=2090-01-01",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?due_after=2090-01-01T00:00:00Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "due_after",
+                  "value": "2090-01-01T00:00:00Z"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Write report\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Write report\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - overdue=true",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?overdue=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "overdue",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Overdue = past due date AND not done."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Buy milk\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Buy milk\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - overdue=false",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?overdue=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "overdue",
+                  "value": "false"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 2 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(2);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Call mom\", \"Write report\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Call mom\", \"Write report\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter - combined (status + tags + priority_min)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?status=in_progress&tags=work&priority_min=4",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "in_progress"
+                },
+                {
+                  "key": "tags",
+                  "value": "work"
+                },
+                {
+                  "key": "priority_min",
+                  "value": "4"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "pm.test('titles are [\"Write report\"] (any order)', () => {",
+                  "    pm.expect(body.data.map(t => t.title).sort()).to.eql([\"Write report\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sort - priority ascending",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?sort=priority",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "priority"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('order is [\"Call mom\", \"Buy milk\", \"Write report\"]', () => {",
+                  "    pm.expect(body.data.map(t => t.title)).to.eql([\"Call mom\", \"Buy milk\", \"Write report\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sort - priority descending",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?sort=-priority",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "-priority"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('order is [\"Write report\", \"Buy milk\", \"Call mom\"]', () => {",
+                  "    pm.expect(body.data.map(t => t.title)).to.eql([\"Write report\", \"Buy milk\", \"Call mom\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sort - title ascending",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?sort=title",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "title"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('order is [\"Buy milk\", \"Call mom\", \"Write report\"]', () => {",
+                  "    pm.expect(body.data.map(t => t.title)).to.eql([\"Buy milk\", \"Call mom\", \"Write report\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sort - multiple (-priority,title)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?sort=-priority,title",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "-priority,title"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('order is [\"Write report\", \"Buy milk\", \"Call mom\"]', () => {",
+                  "    pm.expect(body.data.map(t => t.title)).to.eql([\"Write report\", \"Buy milk\", \"Call mom\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cursor - first page (page_size=2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?pagination=cursor&page_size=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "pagination",
+                  "value": "cursor"
+                },
+                {
+                  "key": "page_size",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "Keyset pagination: stable under inserts, no COUNT. Saves next_cursor to the environment."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 2 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(2);",
+                  "});",
+                  "",
+                  "const meta = pm.response.json().meta.pagination;",
+                  "pm.test('pagination meta is correct', () => {",
+                  "",
+                  "    pm.expect(meta.mode).to.eql('cursor');",
+                  "    pm.expect(meta.has_more).to.eql(true);",
+                  "    pm.expect(meta.next_cursor).to.be.a('string').and.not.empty;",
+                  "    pm.expect(meta).to.not.have.property('total');",
+                  "});",
+                  "",
+                  "pm.environment.set('cursor', pm.response.json().meta.pagination.next_cursor);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cursor - second page (uses saved cursor)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?pagination=cursor&page_size=2&cursor={{cursor}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "pagination",
+                  "value": "cursor"
+                },
+                {
+                  "key": "page_size",
+                  "value": "2"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('data is an array with 1 item(s)', () => {",
+                  "    pm.expect(body.data).to.be.an('array').with.lengthOf(1);",
+                  "});",
+                  "",
+                  "const meta = pm.response.json().meta.pagination;",
+                  "pm.test('pagination meta is correct', () => {",
+                  "",
+                  "    pm.expect(meta.mode).to.eql('cursor');",
+                  "    pm.expect(meta.has_more).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid - priority_min=9",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?priority_min=9",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "priority_min",
+                  "value": "9"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"priority_min\"', () => pm.expect(err.details).to.have.property('priority_min'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid - unknown sort field",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?sort=password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "password"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"sort\"', () => pm.expect(err.details).to.have.property('sort'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid - cursor mode with sort=title",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?pagination=cursor&sort=title",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "pagination",
+                  "value": "cursor"
+                },
+                {
+                  "key": "sort",
+                  "value": "title"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"sort\"', () => pm.expect(err.details).to.have.property('sort'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid - page_size=1000",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?page_size=1000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "page_size",
+                  "value": "1000"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"page_size\"', () => pm.expect(err.details).to.have.property('page_size'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid - bad status value",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?status=bogus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "bogus"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"status\"', () => pm.expect(err.details).to.have.property('status'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid - due_after not ISO-8601",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?due_after=yesterday",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "due_after",
+                  "value": "yesterday"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"due_after\"', () => pm.expect(err.details).to.have.property('due_after'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Explorer - every list parameter (all disabled)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "todo,in_progress,done",
+                  "disabled": true
+                },
+                {
+                  "key": "priority_min",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "priority_max",
+                  "value": "4",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "milk",
+                  "disabled": true
+                },
+                {
+                  "key": "tags",
+                  "value": "home,work",
+                  "disabled": true
+                },
+                {
+                  "key": "due_after",
+                  "value": "2020-01-01T00:00:00Z",
+                  "disabled": true
+                },
+                {
+                  "key": "due_before",
+                  "value": "2099-12-31T00:00:00Z",
+                  "disabled": true
+                },
+                {
+                  "key": "overdue",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "-priority,due_date",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "page_size",
+                  "value": "20",
+                  "disabled": true
+                },
+                {
+                  "key": "pagination",
+                  "value": "cursor",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Playground request: tick the parameters you want to try. Everything is disabled by default, so as sent it behaves like the default list."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Read-only requests against the three seed todos, so every filter has an exactly known result."
+    },
+    {
+      "name": "05 Stats",
+      "item": [
+        {
+          "name": "Todo statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stats/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stats",
+                "todos"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const s = pm.response.json().data;",
+                  "pm.test('counts match the three seed todos', () => {",
+                  "    pm.expect(s.total).to.eql(3);",
+                  "    pm.expect(s.todo).to.eql(1);",
+                  "    pm.expect(s.in_progress).to.eql(1);",
+                  "    pm.expect(s.done).to.eql(1);",
+                  "    pm.expect(s.overdue).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 Todos - Update & Delete",
+      "item": [
+        {
+          "name": "Create temp todo (title only -> defaults)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Temp todo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('todo has all fields', () => {",
+                  "    ['id','title','description','status','priority','due_date','tags','created_at','updated_at','completed_at']",
+                  "        .forEach(k => pm.expect(t).to.have.property(k));",
+                  "});",
+                  "",
+                  "pm.test('defaults applied', () => {",
+                  "    pm.expect(t.status).to.eql('todo');",
+                  "    pm.expect(t.priority).to.eql(2);",
+                  "    pm.expect(t.tags).to.eql([]);",
+                  "    pm.expect(t.description).to.eql(null);",
+                  "    pm.expect(t.due_date).to.eql(null);",
+                  "});",
+                  "pm.environment.set('todo_tmp_id', t.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH - partial update (title + priority)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            },
+            "description": "PATCH is partial: omitted fields are left untouched.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Temp renamed\",\n  \"priority\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('only the sent fields changed', () => {",
+                  "    pm.expect(t.title).to.eql('Temp renamed');",
+                  "    pm.expect(t.priority).to.eql(4);",
+                  "    pm.expect(t.status).to.eql('todo');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH - status=done sets completed_at",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"done\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('completed_at is set', () => {",
+                  "    pm.expect(t.status).to.eql('done');",
+                  "    pm.expect(t.completed_at).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH - status=todo clears completed_at",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"todo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('completed_at is cleared again', () => {",
+                  "    pm.expect(t.status).to.eql('todo');",
+                  "    pm.expect(t.completed_at).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH - set description, due_date and tags",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Some notes\",\n  \"due_date\": \"2030-06-15T09:30:00Z\",\n  \"tags\": [\n    \"a\",\n    \"b-2\",\n    \"c_3\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('fields updated', () => {",
+                  "    pm.expect(t.description).to.eql('Some notes');",
+                  "    pm.expect(t.due_date).to.eql('2030-06-15T09:30:00.000Z');",
+                  "    pm.expect(t.tags).to.eql(['a', 'b-2', 'c_3']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH - null clears description and due_date",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            },
+            "description": "Sending null explicitly clears description / due_date. Omitting them leaves them as they are.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": null,\n  \"due_date\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const t = pm.response.json().data;",
+                  "pm.test('description and due_date are null; tags kept', () => {",
+                  "    pm.expect(t.description).to.eql(null);",
+                  "    pm.expect(t.due_date).to.eql(null);",
+                  "    pm.expect(t.tags).to.eql(['a', 'b-2', 'c_3']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH - invalid priority",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"priority\": 9\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"validation_failed\"', () => pm.expect(err.code).to.eql('validation_failed'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);",
+                  "pm.test('details has \"priority\"', () => pm.expect(err.details).to.have.property('priority'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH - not found",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "999999999"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"not_found\"', () => pm.expect(err.code).to.eql('not_found'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE temp todo",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));",
+                  "",
+                  "pm.test('empty body', () => pm.expect(pm.response.text()).to.eql(''));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get deleted todo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"not_found\"', () => pm.expect(err.code).to.eql('not_found'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE again",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos/{{todo_tmp_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos",
+                "{{todo_tmp_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"not_found\"', () => pm.expect(err.code).to.eql('not_found'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stats unchanged after temp todo is gone",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stats/todos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "stats",
+                "todos"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('total is back to 3', () => pm.expect(pm.response.json().data.total).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 Token lifecycle",
+      "item": [
+        {
+          "name": "Refresh tokens (rotation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Exchanges the refresh token for a NEW pair. The old refresh token becomes invalid (rotation).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('old_refresh_token', pm.environment.get('refresh_token'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('new access + refresh tokens', () => {",
+                  "    pm.expect(d.tokens.access_token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(d.tokens.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('refresh token was rotated', () => pm.expect(d.tokens.refresh_token).to.not.eql(pm.environment.get('old_refresh_token')));",
+                  "pm.environment.set('access_token', d.tokens.access_token);",
+                  "pm.environment.set('refresh_token', d.tokens.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "New access token works",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/todos?page_size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "todos"
+              ],
+              "query": [
+                {
+                  "key": "page_size",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay the OLD refresh token (reuse detection)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Re-using an already-rotated refresh token is treated as theft: it is rejected AND all of the user's refresh tokens are revoked.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{old_refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"unauthorized\"', () => pm.expect(err.code).to.eql('unauthorized'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Newest refresh token is now revoked too",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "const err = pm.response.json().error;",
+                  "pm.test('error.code is \"unauthorized\"', () => pm.expect(err.code).to.eql('unauthorized'));",
+                  "pm.test('error.message is a non-empty string', () => pm.expect(err.message).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revokes the given refresh token. Always 204 (idempotent). The short-lived access token stays valid until it expires - JWTs are stateless.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Run last: replaying a token revokes every refresh token of the user."
+    }
+  ]
+}

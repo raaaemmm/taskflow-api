@@ -1,0 +1,100 @@
+# ---------------------------------------------------------------
+# Secrets: NEVER commit these (.env holds JWT_SECRET and DB password)
+# ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------------------------------------------------------------
+# Build output (CMake, MSVC, Ninja, Make)
+# ---------------------------------------------------------------
+build/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+_deps/
+Makefile
+
+# Compiled objects, libraries and binaries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.out
+todo_api
+unit_tests
+
+# Sanitizer / debug / crash output
+*.log
+/core
+/core.*
+*.dSYM/
+
+# ---------------------------------------------------------------
+# Runtime files created by the app (Drogon upload temp dirs)
+# ---------------------------------------------------------------
+uploads/
+
+# ---------------------------------------------------------------
+# Dependency managers
+# ---------------------------------------------------------------
+vcpkg_installed/
+.vcpkg/
+.conan/
+
+# ---------------------------------------------------------------
+# Editors / IDEs
+# ---------------------------------------------------------------
+# VS Code: ignore local state but keep shared project settings
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.cache/
+.clangd/
+
+# Visual Studio / JetBrains / others
+.vs/
+*.user
+*.suo
+*.sln.docstates
+.idea/
+*.swp
+*~
+
+# ---------------------------------------------------------------
+# OS junk
+# ---------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------
+# Docker / compose local overrides
+# ---------------------------------------------------------------
+docker-compose.override.yml
+
+# ---------------------------------------------------------------
+# Archives and test leftovers
+# ---------------------------------------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.bak
+*.orig

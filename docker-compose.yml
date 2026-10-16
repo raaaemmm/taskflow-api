@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: todo
+      POSTGRES_USER: todo
+      POSTGRES_PASSWORD: todo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todo -d todo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (openssl rand -hex 32)}
+      DB_HOST: db
+      DB_NAME: todo
+      DB_USER: todo
+      DB_PASSWORD: todo
+      AUTH_RATE_LIMIT_PER_MIN: 1000
+      RATE_LIMIT_PER_MIN: 5000
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
