@@ -4,7 +4,8 @@ services:
     environment:
       POSTGRES_DB: todo
       POSTGRES_USER: todo
-      POSTGRES_PASSWORD: todo
+      # Set DB_PASSWORD in .env for anything other than quick local runs.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-todo}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,9 +24,7 @@ services:
       DB_HOST: db
       DB_NAME: todo
       DB_USER: todo
-      DB_PASSWORD: todo
-      AUTH_RATE_LIMIT_PER_MIN: 1000
-      RATE_LIMIT_PER_MIN: 5000
+      DB_PASSWORD: ${DB_PASSWORD:-todo}
     ports:
       - "8080:8080"
 
